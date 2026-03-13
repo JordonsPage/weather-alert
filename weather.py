@@ -5,7 +5,7 @@ from datetime import datetime
 
 def get_weather_ct():
     """Get current weather for Connecticut (using Hartford as reference)"""
-    api_key = "d52d54440d0a700b969cc4311106d243" 
+    api_key = "" 
     city = "Hartford"
     state_code = "CT"
     country_code = "US"
@@ -40,9 +40,9 @@ def email_alert(to, subject, body):
     msg["subject"] = subject
     msg["to"] = to
     
-    user = "jordon.quinn1@gmail.com"
+    user = "enter email"
     msg["from"] = user
-    password = "dkbmcbkjgwjojgne"
+    password = "create password"
 
     server = smtplib.SMTP("smtp.gmail.com", 587)
     server.starttls()
@@ -57,4 +57,4 @@ if __name__ == "__main__":
     print(f"Weather info: {weather_info}")  
     
 
-    email_alert("jordon.quinn3@gmail.com", f"Weather: {weather_info}", "Current weather update")
+    email_alert("user", f"Weather: {weather_info}", "Current weather update")
