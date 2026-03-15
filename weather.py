@@ -1,60 +1,139 @@
-import smtplib
-from email.message import EmailMessage
 import requests
+import json
+import os
 from datetime import datetime
+from twilio.rest import Client
 
-def get_weather_ct():
-    """Get current weather for Connecticut (using Hartford as reference)"""
-    api_key = "" 
-    city = "Hartford"
-    state_code = "CT"
-    country_code = "US"
-    
-    
-    url = f"https://api.openweathermap.org/data/2.5/weather?q={city},{state_code},{country_code}&appid={api_key}&units=imperial"
-    
+ACCOUNT_SID = "your_account_sid"
+AUTH_TOKEN  = "your_auth_token"
+FROM_NUMBER = "your_twilio_number"   
+TO_NUMBER   = "your_real_number"     
+
+
+API_KEY = "your_openweathermap_key"
+CITY    = "Hartford"
+STATE   = "CT"
+COUNTRY = "US"
+
+
+LOG_FILE = "alert_log.json"
+
+
+def get_weather():
+    """grab weatehr"""
+    url = (
+        f"https://api.openweathermap.org/data/2.5/weather"
+        f"?q={CITY},{STATE},{COUNTRY}&appid={API_KEY}&units=imperial"
+    )
     try:
         response = requests.get(url)
         data = response.json()
-        
         if response.status_code == 200:
-            
-            temp = data["main"]["temp"]
-            desc = data["weather"][0]["description"]
-            
-            
-            weather_msg = f"{desc.capitalize()}, {int(temp)}°F in CT"
-            
-            return weather_msg
+            temp        = data["main"]["temp"]
+            description = data["weather"][0]["description"]
+            main        = data["weather"][0]["main"].lower()  # "rain", "snow", etc.
+            return {"temp": temp, "description": description, "main": main}
         else:
-            print(f"API Error: {data}") 
-            return "Weather unavailable"
-    
+            print(f"API Error: {data}")
+            return None
     except Exception as e:
-        print(f"Exception: {e}") 
-        return "Weather unavailable"
+        print(f"Exception: {e}")
+        return None
 
-def email_alert(to, subject, body):
-    msg = EmailMessage()
-    msg.set_content(body)
-    msg["subject"] = subject
-    msg["to"] = to
+
+def check_conditions(weather):
+    """Return a list of triggered alert reasons."""
+    reasons = []
+    if weather["temp"] <= 32:
+        reasons.append(f"Freezing temp: {int(weather['temp'])}°F")
+    if weather["temp"] >= 90:
+        reasons.append(f"Extreme heat: {int(weather['temp'])}°F")
+    if weather["main"] in ("rain", "snow", "drizzle", "thunderstorm"):
+        reasons.append(f"{weather['description'].capitalize()} detected")
+    return reasons
+
+
+def send_sms(message):
+    """sends message to #"""
+    client = Client(ACCOUNT_SID, AUTH_TOKEN)
+    msg = client.messages.create(
+        body=message,
+        from_=FROM_NUMBER,
+        to=TO_NUMBER
+    )
+    print(f"SMS sent: {msg.sid}")
+    return msg.sid
+
+
+def load_log():
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+
+def save_log(log):
+    with open(LOG_FILE, "w") as f:
+        json.dump(log, f, indent=2)
+
+
+def run():
+    weather = get_weather()
+    if not weather:
+        print("Could not fetch weather.")
+        return
+
+    print(f"Weather: {weather['description']}, {int(weather['temp'])}°F")
+
+    reasons = check_conditions(weather)
+    if not reasons:
+        print("No alert conditions met.")
+        return
+
+    """makes msg"""
+    alert_text = " Weather Alert:\n" + "\n".join(f"- {r}" for r in reasons)
+    print(alert_text)
+
     
-    user = "enter email"
-    msg["from"] = user
-    password = "create password"
+    log = load_log()
+    unacknowledged = [e for e in log if not e["acknowledged"]]
 
-    server = smtplib.SMTP("smtp.gmail.com", 587)
-    server.starttls()
-    server.login(user, password)
-    server.send_message(msg)
+    if unacknowledged:
+        
+        followup = f"Follow-up (unacknowledged):\n{alert_text}"
+        sid = send_sms(followup)
+        
+        for e in unacknowledged:
+            e["acknowledged"] = True
+        log.append({
+            "timestamp": datetime.now().isoformat(),
+            "message": followup,
+            "sid": sid,
+            "acknowledged": False,
+            "type": "followup"
+        })
+    else:
+        sid = send_sms(alert_text)
+        log.append({
+            "timestamp": datetime.now().isoformat(),
+            "message": alert_text,
+            "sid": sid,
+            "acknowledged": False,
+            "type": "initial"
+        })
 
-    server.quit()
+    save_log(log)
+
+
+def acknowledge():
+    """Call this manually to mark latest alert as acknowledged."""
+    log = load_log()
+    for e in log:
+        if not e["acknowledged"]:
+            e["acknowledged"] = True
+    save_log(log)
+    print("All alerts acknowledged.")
+
 
 if __name__ == "__main__":
-    
-    weather_info = get_weather_ct()
-    print(f"Weather info: {weather_info}")  
-    
-
-    email_alert("user", f"Weather: {weather_info}", "Current weather update")
+    run()
