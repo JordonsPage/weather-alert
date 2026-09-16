@@ -1,6 +1,7 @@
 import requests
 import json
 import os
+import time
 from datetime import datetime
 from twilio.rest import Client
 
@@ -17,6 +18,7 @@ COUNTRY = "US"
 
 
 LOG_FILE = "alert_log.json"
+DAILY_INTERVAL_SECONDS = 24 * 60 * 60
 
 
 def get_weather():
@@ -136,4 +138,10 @@ def acknowledge():
 
 
 if __name__ == "__main__":
-    run()
+    """Keep the process running and check the weather once every 24 hours."""
+    while True:
+        try:
+            run()
+        except Exception as e:
+            print(f"Daily check failed: {e}")
+        time.sleep(DAILY_INTERVAL_SECONDS)
